@@ -6,21 +6,38 @@ from scipy import stats
 import numpy as np
 import dropbox
 import os
+import requests
+
+# Your Dropbox app credentials
+APP_KEY = 'zz9724s39cmnoyr'
+APP_SECRET = 'g8jnn2yivf73zf6'
+REFRESH_TOKEN = 'KngaWTiyojsAAAAAAAAAAaqjd8m4GdXqi8eXgUIxRfg3IqkMF0UIW9gnmvX238YY'
 
 # Define password
 PASSWORD = "nirs_unibern"
 
-# Dropbox Access Token from Streamlit secrets
-DROPBOX_ACCESS_TOKEN = st.secrets["general"]["DROPBOX_ACCESS_TOKEN"]
+# Function to refresh access token
+def refresh_access_token():
+    url = "https://api.dropbox.com/oauth2/token"
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": REFRESH_TOKEN,
+        "client_id": APP_KEY,
+        "client_secret": APP_SECRET
+    }
+    response = requests.post(url, data=data)
+    if response.status_code == 200:
+        return response.json()["access_token"]
+    else:
+        st.error(f"Failed to refresh access token: {response.text}")
+        st.stop()
 
-# Initialize Dropbox client
-dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
-
-def read_excel_from_dropbox(path):
-    _, res = dbx.files_download(path)
-    with open(f"/tmp/{os.path.basename(path)}", "wb") as f:
-        f.write(res.content)
-    return pd.read_excel(f"/tmp/{os.path.basename(path)}")
+# Function to read Excel file from Dropbox
+def read_excel_from_dropbox(path, access_token):
+    dbx = dropbox.Dropbox(access_token)
+    metadata, res = dbx.files_download(path)
+    data = pd.read_excel(res.content)
+    return data
 
 # Password lock mechanism
 if 'authenticated' not in st.session_state:
@@ -41,12 +58,15 @@ else:
     # Define Dropbox directory path
     dropbox_dir = '/UniBern/UniBern PhD/Publications/Pre-Post NIRS scale project/Data clean/'
 
+    # Refresh access token
+    access_token = refresh_access_token()
+
     # Load data from Excel files
     data = {}
     for intervention in interventions:
         for variable in variables:
             file_path = os.path.join(dropbox_dir, f'masterTable_{intervention}_{variable}.xlsx')
-            df = read_excel_from_dropbox(file_path)
+            df = read_excel_from_dropbox(file_path, access_token)
             if intervention in ['pre', 'post']:
                 df = df.iloc[:600]  # Limit to 600 seconds for pre and post interventions
             data[(intervention, variable)] = df
@@ -158,7 +178,7 @@ else:
         st.warning("Please select exactly two combinations for Bland-Altman plot.")
 
     # Load the analysis master table
-    analysis_master_table = read_excel_from_dropbox(os.path.join(dropbox_dir, 'analysis_master table.xlsx'))
+    analysis_master_table = read_excel_from_dropbox(os.path.join(dropbox_dir, 'analysis_master table.xlsx'), access_token)
 
     # Selection for correlation plot
     st.sidebar.write("Correlation Plot Selection")

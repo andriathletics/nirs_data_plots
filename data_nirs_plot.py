@@ -4,9 +4,23 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
 import numpy as np
+import dropbox
+import os
 
 # Define password
 PASSWORD = "nirs_unibern"
+
+# Dropbox Access Token from Streamlit secrets
+DROPBOX_ACCESS_TOKEN = st.secrets["general"]["DROPBOX_ACCESS_TOKEN"]
+
+# Initialize Dropbox client
+dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
+
+def read_excel_from_dropbox(path):
+    _, res = dbx.files_download(path)
+    with open(f"/tmp/{os.path.basename(path)}", "wb") as f:
+        f.write(res.content)
+    return pd.read_excel(f"/tmp/{os.path.basename(path)}")
 
 # Password lock mechanism
 if 'authenticated' not in st.session_state:
@@ -23,13 +37,16 @@ else:
     # Define interventions and variables
     interventions = ['post', 'pre']
     variables = ['SmO2', 'THb', 'TSI']
+    
+    # Define Dropbox directory path
+    dropbox_dir = '/UniBern/UniBern PhD/Publications/Pre-Post NIRS scale project/Data clean/'
 
     # Load data from Excel files
     data = {}
     for intervention in interventions:
         for variable in variables:
-            filename = f'masterTable_{intervention}_{variable}.xlsx'
-            df = pd.read_excel(filename)
+            file_path = os.path.join(dropbox_dir, f'masterTable_{intervention}_{variable}.xlsx')
+            df = read_excel_from_dropbox(file_path)
             if intervention in ['pre', 'post']:
                 df = df.iloc[:600]  # Limit to 600 seconds for pre and post interventions
             data[(intervention, variable)] = df
@@ -141,7 +158,7 @@ else:
         st.warning("Please select exactly two combinations for Bland-Altman plot.")
 
     # Load the analysis master table
-    analysis_master_table = pd.read_excel('analysis_master table.xlsx', sheet_name='pre_post')
+    analysis_master_table = read_excel_from_dropbox(os.path.join(dropbox_dir, 'analysis_master table.xlsx'))
 
     # Selection for correlation plot
     st.sidebar.write("Correlation Plot Selection")

@@ -4,6 +4,41 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
 import numpy as np
+import requests
+from io import BytesIO
+
+# Your Dropbox app credentials
+APP_KEY = 'cn9p3vo0x35zli6'
+APP_SECRET = 'jyans6nturbyufu'
+REFRESH_TOKEN = 'yCBOviYIjVcAAAAAAAAAAYgNuht-Na_pJ91-hEO9CfeQdLLjkUnQt7DTK3ZMTETY'
+
+def refresh_access_token():
+    url = "https://api.dropbox.com/oauth2/token"
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": REFRESH_TOKEN,
+        "client_id": APP_KEY,
+        "client_secret": APP_SECRET
+    }
+    response = requests.post(url, data=data)
+    if response.status_code == 200:
+        return response.json()["access_token"]
+    else:
+        st.error(f"Failed to refresh access token: {response.text}")
+        st.stop()
+
+def download_file_from_dropbox(path, access_token):
+    url = f"https://content.dropboxapi.com/2/files/download"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Dropbox-API-Arg": f"{{\"path\": \"{path}\"}}"
+    }
+    response = requests.post(url, headers=headers)
+    if response.status_code == 200:
+        return BytesIO(response.content)
+    else:
+        st.error(f"Failed to download file: {response.text}")
+        st.stop()
 
 # Define password
 PASSWORD = "nirs_unibern"
@@ -24,12 +59,17 @@ else:
     interventions = ['post', 'pre']
     variables = ['SmO2', 'THb', 'TSI']
 
-    # Load data from Excel files
+    # Refresh access token
+    access_token = refresh_access_token()
+
+    # Load data from Dropbox
     data = {}
+    dropbox_base_path = '/UniBern/UniBern PhD/Publications/Pre-Post NIRS scale project/Data clean/'
     for intervention in interventions:
         for variable in variables:
-            filename = f'masterTable_{intervention}_{variable}.xlsx'
-            df = pd.read_excel(filename)
+            filename = f'{dropbox_base_path}masterTable_{intervention}_{variable}.xlsx'
+            file_stream = download_file_from_dropbox(filename, access_token)
+            df = pd.read_excel(file_stream)
             if intervention in ['pre', 'post']:
                 df = df.iloc[:600]  # Limit to 600 seconds for pre and post interventions
             data[(intervention, variable)] = df
@@ -139,51 +179,3 @@ else:
             st.error("Please select valid intervention and variable combinations.")
     else:
         st.warning("Please select exactly two combinations for Bland-Altman plot.")
-
-    # Load the analysis master table
-    analysis_master_table = pd.read_excel('analysis_master table.xlsx', sheet_name='pre_post')
-
-    # Selection for correlation plot
-    st.sidebar.write("Correlation Plot Selection")
-    x_axis = st.sidebar.selectbox('Select X-axis', analysis_master_table.columns[1:])  # Exclude participant ID column
-    y_axis = st.sidebar.selectbox('Select Y-axis', analysis_master_table.columns[1:])  # Exclude participant ID column
-
-    # Selection for categories
-    st.sidebar.write("Category Selection")
-    sex_selected = st.sidebar.multiselect('Select Sex', analysis_master_table['Sex'].unique(), default=analysis_master_table['Sex'].unique())
-    moxy_selected = st.sidebar.multiselect('Select Moxy Placement', analysis_master_table['Moxy placement'].unique(), default=analysis_master_table['Moxy placement'].unique())
-    fitness_selected = st.sidebar.multiselect('Select Fitness', analysis_master_table['Fitness'].unique(), default=analysis_master_table['Fitness'].unique())
-    skin_type_selected = st.sidebar.multiselect('Select Fitzpatrick Skintype', analysis_master_table['Fitzpatrick Skintype'].unique(), default=analysis_master_table['Fitzpatrick Skintype'].unique())
-
-    # Filter data based on selections
-    filtered_data = analysis_master_table[
-        (analysis_master_table['Sex'].isin(sex_selected)) &
-        (analysis_master_table['Moxy placement'].isin(moxy_selected)) &
-        (analysis_master_table['Fitness'].isin(fitness_selected)) &
-        (analysis_master_table['Fitzpatrick Skintype'].isin(skin_type_selected))
-    ]
-
-    # Convert selected columns to numeric, coercing errors
-    filtered_data[x_axis] = pd.to_numeric(filtered_data[x_axis], errors='coerce')
-    filtered_data[y_axis] = pd.to_numeric(filtered_data[y_axis], errors='coerce')
-
-    # Drop rows with NaN values in the selected columns
-    filtered_data = filtered_data.dropna(subset=[x_axis, y_axis])
-
-    # Plot correlation
-    fig, ax = plt.subplots()
-    sns.regplot(x=filtered_data[x_axis], y=filtered_data[y_axis], ax=ax)
-    r_value, p_value = stats.pearsonr(filtered_data[x_axis], filtered_data[y_axis])
-    ax.set_title(f'Correlation between {x_axis} and {y_axis}\nR²={r_value**2:.2f}, p={p_value:.2e}')
-
-    # Calculate 95% CI for the correlation coefficient
-    n = len(filtered_data)
-    se = 1.0 / (n - 3)**0.5
-    z = 0.5 * np.log((1 + r_value) / (1 - r_value))
-    z_crit = stats.norm.ppf(0.975)
-    z_interval = z + np.array([-1, 1]) * z_crit * se
-    r_interval = (np.exp(2 * z_interval) - 1) / (np.exp(2 * z_interval) + 1)
-    ax.fill_betweenx(ax.get_ylim(), *r_interval, color='gray', alpha=0.2)
-
-    # Display the correlation plot
-    st.pyplot(fig)

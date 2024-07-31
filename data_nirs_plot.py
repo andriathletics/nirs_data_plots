@@ -5,6 +5,8 @@ from scipy import stats
 import numpy as np
 import requests
 from io import BytesIO
+import dropbox
+import tempfile
 
 # Your Dropbox app credentials
 APP_KEY = 'cn9p3vo0x35zli6'
@@ -26,25 +28,29 @@ def refresh_access_token():
         st.error(f"Failed to refresh access token: {response.text}")
         st.stop()
 
-def download_file_from_dropbox(path, access_token):
-    url = f"https://content.dropboxapi.com/2/files/download"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Dropbox-API-Arg": f"{{\"path\": \"{path}\"}}"
-    }
-    response = requests.post(url, headers=headers)
-    if response.status_code == 200:
-        return BytesIO(response.content)
-    else:
-        st.error(f"Failed to download file: {response.text}")
-        st.stop()
+# Function to initialize Dropbox client with refreshed access token
+def get_dropbox_client():
+    access_token = refresh_access_token()
+    return dropbox.Dropbox(access_token)
+
+# Initialize Dropbox client
+dbx = get_dropbox_client()
+
+def download_file_from_dropbox(dropbox_path):
+    """Download a file from Dropbox to a temporary local path and return the path."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
+        try:
+            metadata, res = dbx.files_download(path=dropbox_path)
+            tmp_file.write(res.content)
+            tmp_file_path = tmp_file.name
+        except Exception as e:
+            st.error(f"Error downloading file: {e}")
+            st.stop()
+    return tmp_file_path
 
 # Define interventions and variables
 interventions = ['post', 'pre']
 variables = ['SmO2', 'THb', 'TSI']
-
-# Refresh access token
-access_token = refresh_access_token()
 
 # Load data from Dropbox
 data = {}
@@ -52,15 +58,16 @@ dropbox_base_path = '/UniBern/UniBern PhD/Publications/Pre-Post NIRS scale proje
 for intervention in interventions:
     for variable in variables:
         filename = f'{dropbox_base_path}masterTable_{intervention}_{variable}.xlsx'
-        file_stream = download_file_from_dropbox(filename, access_token)
-        df = pd.read_excel(file_stream)
+        local_file_path = download_file_from_dropbox(filename)
+        df = pd.read_excel(local_file_path)
         if intervention in ['pre', 'post']:
             df = df.iloc[:600]  # Limit to 600 seconds for pre and post interventions
         data[(intervention, variable)] = df
 
 # Load additional participant information
-info_path = 'C:/Users/andri/Dropbox (Personal)/UniBern/UniBern PhD/Publications/Pre-Post NIRS scale project/Data clean/analysis_master table.xlsx'
-info_df = pd.read_excel(info_path, sheet_name='pre_post')
+info_path = f'{dropbox_base_path}analysis_master table.xlsx'
+local_info_path = download_file_from_dropbox(info_path)
+info_df = pd.read_excel(local_info_path, sheet_name='pre_post')
 
 # Extract relevant columns
 participant_info = info_df.iloc[:, [0, 1, 8, 11, 17]]

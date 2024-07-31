@@ -5,18 +5,8 @@ from scipy import stats
 import numpy as np
 import requests
 from io import BytesIO
-import tempfile
-import subprocess
-import sys
-
-# Function to install the dropbox package if not already installed
-def install(package):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-# Install dropbox package
-install("dropbox")
-
 import dropbox
+import tempfile
 
 # Your Dropbox app credentials
 APP_KEY = 'cn9p3vo0x35zli6'
@@ -208,7 +198,7 @@ if len(ba_selected_combos) == 2:
         # Axes labels and title
         ax.set_xlabel('Mean of Two Measurements')
         ax.set_ylabel('Difference Between Measurements')
-        ax.setTitle('Bland-Altman Plot')
+        ax.set_title('Bland-Altman Plot')
         ax.legend()
 
         # Display the Bland-Altman plot
